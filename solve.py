@@ -74,7 +74,7 @@ Problem:
 {q_data['content']}
 """
 
-gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 ai_payload = {
     "contents": [{"parts": [{"text": prompt}]}]
 }
