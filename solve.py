@@ -97,7 +97,7 @@ except Exception as e:
 
 # 5. Submit solution to LeetCode
 print("Submitting solution to LeetCode...")
-submit_url = f"[https://leetcode.com/problems/](https://leetcode.com/problems/){slug}/submit/"
+submit_url = f"https://leetcode.com/problems/{slug}/submit/"
 submit_payload = {
     "lang": "python3",
     "question_id": q_id,
@@ -117,7 +117,7 @@ if not submission_id:
 print(f"Submission ID: {submission_id}. Checking result status...")
 
 # 6. Poll for the submission verdict
-check_url = f"[https://leetcode.com/submissions/detail/](https://leetcode.com/submissions/detail/){submission_id}/check/"
+check_url = f"https://leetcode.com/submissions/detail/{submission_id}/check/"
 for attempt in range(12):
     time.sleep(3)
     try:
