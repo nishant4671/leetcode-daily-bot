@@ -90,7 +90,7 @@ clean_code = re.sub(r"^```python\s*|^```\s*|```$", "", raw_code, flags=re.MULTIL
 
 # 5. Submit solution to LeetCode
 print("Submitting solution to LeetCode...")
-submit_url = f"[https://leetcode.com/problems/](https://leetcode.com/problems/){slug}/submit/"
+submit_url = f"https://leetcode.com/problems/{slug}/submit/"
 submit_payload = {
     "lang": "python3",
     "question_id": q_id,
