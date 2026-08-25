@@ -143,11 +143,17 @@ else:
 
 # 7. Save locally for LeetHub sync
 print("Saving code locally for LeetHub sync...")
-# Pad the question ID to 4 digits (e.g., 6 becomes 0006)
 folder_name = f"{str(q_id).zfill(4)}-{slug}"
 os.makedirs(folder_name, exist_ok=True)
 
-with open(f"{folder_name}/solution.py", "w") as f:
+# Save the Python file (e.g., 0002-add-two-numbers.py)
+file_name = f"{folder_name}.py"
+with open(f"{folder_name}/{file_name}", "w", encoding="utf-8") as f:
     f.write(clean_code)
+
+# Save the README.md
+with open(f"{folder_name}/README.md", "w", encoding="utf-8") as f:
+    f.write(f"# {q_id}. {q_data['title']}\n\n")
+    f.write(q_data['content'])
     
-print(f"Saved to {folder_name}/solution.py")
+print(f"Saved {file_name} and README.md to {folder_name}/")
