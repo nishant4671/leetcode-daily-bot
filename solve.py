@@ -138,3 +138,16 @@ for attempt in range(12):
         print(f"Error checking status (attempt {attempt + 1}): {e}")
 else:
     print("Timed out waiting for submission result.")
+
+
+
+# 7. Save locally for LeetHub sync
+print("Saving code locally for LeetHub sync...")
+# Pad the question ID to 4 digits (e.g., 6 becomes 0006)
+folder_name = f"{str(q_id).zfill(4)}-{slug}"
+os.makedirs(folder_name, exist_ok=True)
+
+with open(f"{folder_name}/solution.py", "w") as f:
+    f.write(clean_code)
+    
+print(f"Saved to {folder_name}/solution.py")
