@@ -3,6 +3,7 @@ import re
 import sys
 import time
 import requests
+from curl_cffi import requests as cf_requests
 
 # 1. Load credentials from environment
 LEETCODE_SESSION = os.getenv("LEETCODE_SESSION")
@@ -43,7 +44,8 @@ graphql_query = {
     """
 }
 
-res = requests.post("https://leetcode.com/graphql", json=graphql_query, headers=headers)
+# Using cf_requests with Chrome impersonation to bypass Cloudflare
+res = cf_requests.post("https://leetcode.com/graphql", json=graphql_query, headers=headers, impersonate="chrome")
 if res.status_code != 200:
     print(f"Failed to fetch daily challenge: {res.status_code} - {res.text}")
     sys.exit(1)
@@ -88,7 +90,7 @@ max_retries = 3
 for attempt in range(max_retries):
     ai_res = requests.post(gemini_url, json=ai_payload)
     if ai_res.status_code == 200:
-        break # Success! Exit the loop.
+        break
     elif ai_res.status_code == 503:
         print(f"Gemini API overloaded (503). Retrying in 10 seconds... (Attempt {attempt + 1} of {max_retries})")
         time.sleep(10)
@@ -98,7 +100,6 @@ for attempt in range(max_retries):
 else:
     print("Gemini API failed after multiple retries. Exiting.")
     sys.exit(1)
-    
 
 try:
     raw_code = ai_res.json()["candidates"][0]["content"]["parts"][0]["text"]
@@ -109,14 +110,15 @@ except Exception as e:
 
 # 5. Submit solution to LeetCode
 print("Submitting solution to LeetCode...")
-submit_url = f"https://leetcode.com/problems/{slug}/submit/"
+submit_url = f"[https://leetcode.com/problems/](https://leetcode.com/problems/){slug}/submit/"
 submit_payload = {
     "lang": "python3",
     "question_id": q_id,
     "typed_code": clean_code
 }
 
-sub_res = requests.post(submit_url, json=submit_payload, headers=headers)
+# Using cf_requests for the submission to bypass Cloudflare
+sub_res = cf_requests.post(submit_url, json=submit_payload, headers=headers, impersonate="chrome")
 if sub_res.status_code != 200:
     print(f"Submission request failed: {sub_res.status_code} - {sub_res.text}")
     sys.exit(1)
@@ -129,11 +131,12 @@ if not submission_id:
 print(f"Submission ID: {submission_id}. Checking result status...")
 
 # 6. Poll for the submission verdict
-check_url = f"https://leetcode.com/submissions/detail/{submission_id}/check/"
+check_url = f"[https://leetcode.com/submissions/detail/](https://leetcode.com/submissions/detail/){submission_id}/check/"
 for attempt in range(12):
     time.sleep(3)
     try:
-        status_res = requests.get(check_url, headers=headers).json()
+        # Using cf_requests for polling
+        status_res = cf_requests.get(check_url, headers=headers, impersonate="chrome").json()
         state = status_res.get("state")
         
         if state == "SUCCESS":
@@ -151,19 +154,15 @@ for attempt in range(12):
 else:
     print("Timed out waiting for submission result.")
 
-
-
 # 7. Save locally for LeetHub sync
 print("Saving code locally for LeetHub sync...")
 folder_name = f"{str(q_id).zfill(4)}-{slug}"
 os.makedirs(folder_name, exist_ok=True)
 
-# Save the Python file (e.g., 0002-add-two-numbers.py)
 file_name = f"{folder_name}.py"
 with open(f"{folder_name}/{file_name}", "w", encoding="utf-8") as f:
     f.write(clean_code)
 
-# Save the README.md
 with open(f"{folder_name}/README.md", "w", encoding="utf-8") as f:
     f.write(f"# {q_id}. {q_data['title']}\n\n")
     f.write(q_data['content'])
