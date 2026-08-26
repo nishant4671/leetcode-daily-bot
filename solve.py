@@ -83,10 +83,22 @@ ai_payload = {
     "contents": [{"parts": [{"text": prompt}]}]
 }
 
-ai_res = requests.post(gemini_url, json=ai_payload)
-if ai_res.status_code != 200:
-    print(f"Gemini API Error: {ai_res.status_code} - {ai_res.text}")
+# Retry logic for Gemini API overload
+max_retries = 3
+for attempt in range(max_retries):
+    ai_res = requests.post(gemini_url, json=ai_payload)
+    if ai_res.status_code == 200:
+        break # Success! Exit the loop.
+    elif ai_res.status_code == 503:
+        print(f"Gemini API overloaded (503). Retrying in 10 seconds... (Attempt {attempt + 1} of {max_retries})")
+        time.sleep(10)
+    else:
+        print(f"Gemini API Error: {ai_res.status_code} - {ai_res.text}")
+        sys.exit(1)
+else:
+    print("Gemini API failed after multiple retries. Exiting.")
     sys.exit(1)
+    
 
 try:
     raw_code = ai_res.json()["candidates"][0]["content"]["parts"][0]["text"]
