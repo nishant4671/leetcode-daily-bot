@@ -45,6 +45,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
+          # Pull latest changes to prevent push conflicts
+          git pull --rebase origin main
+          
           git add .
           if git diff-index --quiet HEAD --; then
             echo "No changes to commit."
