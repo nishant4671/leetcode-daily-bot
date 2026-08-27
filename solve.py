@@ -44,15 +44,25 @@ graphql_query = {
     """
 }
 
-# Fetch using cf_requests to bypass Cloudflare
 graphql_url = "https://leetcode.com/graphql"
 res = cf_requests.post(graphql_url, json=graphql_query, headers=headers, impersonate="chrome")
+
 if res.status_code != 200:
     print(f"Failed to fetch daily challenge: {res.status_code} - {res.text}")
     sys.exit(1)
 
+# PHASE 2 FIX: Strict GraphQL Schema Validation
 try:
-    q_data = res.json()["data"]["activeDailyCodingChallengeQuestion"]["question"]
+    json_data = res.json()
+    if "errors" in json_data:
+        print(f"LeetCode GraphQL returned errors: {json_data['errors']}")
+        sys.exit(1)
+        
+    if "data" not in json_data or not json_data["data"].get("activeDailyCodingChallengeQuestion"):
+        print(f"Unexpected API schema or no active challenge found: {json_data}")
+        sys.exit(1)
+
+    q_data = json_data["data"]["activeDailyCodingChallengeQuestion"]["question"]
     q_id = q_data["questionId"]
     slug = q_data["titleSlug"]
     print(f"Problem Found: #{q_id} - {q_data['title']} ({slug})")
@@ -60,11 +70,15 @@ except Exception as e:
     print(f"Error parsing daily challenge data: {e} - Response: {res.text}")
     sys.exit(1)
 
-# 3. Extract Python 3 starter snippet
+# PHASE 2 FIX: Graceful handling of missing Python stubs (e.g., SQL/Bash problems)
+if not q_data.get("codeSnippets"):
+    print("Notice: No code snippets available for this problem. Skipping submission.")
+    sys.exit(0) # Exit 0 means success so the Action doesn't show a red 'X'
+
 py_snippet = next((s["code"] for s in q_data["codeSnippets"] if s["langSlug"] == "python3"), None)
 if not py_snippet:
-    print("Error: Python3 code snippet not found for this problem.")
-    sys.exit(1)
+    print("Notice: Python3 code snippet not found for this problem. Skipping submission.")
+    sys.exit(0)
 
 # 4. Request solution from Gemini API
 print("Generating solution via Gemini...")
@@ -104,7 +118,6 @@ else:
 
 try:
     raw_code = ai_res.json()["candidates"][0]["content"]["parts"][0]["text"]
-    # Robust Regex Extract: Looks for code inside ```python ... ``` blocks, falls back to raw text if no blocks exist
     match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
     clean_code = match.group(1).strip() if match else raw_code.strip()
 except Exception as e:
@@ -133,9 +146,10 @@ if not submission_id:
 print(f"Submission ID: {submission_id}. Checking result status...")
 
 # 6. Poll for the submission verdict
+# PHASE 2 FIX: Hard timeout (60 attempts * 5 seconds = 5 minutes max)
 check_url = f"https://leetcode.com/submissions/detail/{submission_id}/check/"
-for attempt in range(12):
-    time.sleep(3)
+for attempt in range(60):
+    time.sleep(5)
     try:
         status_res = cf_requests.get(check_url, headers=headers, impersonate="chrome").json()
         state = status_res.get("state")
@@ -147,13 +161,16 @@ for attempt in range(12):
                 print(f"Runtime: {status_res.get('status_runtime')} | Memory: {status_res.get('status_memory')}")
             else:
                 print(f"Failed reason: {status_res.get('status_error') or msg}")
+                # If it's a Wrong Answer/Compile Error, exit 1 so we get notified
+                sys.exit(1) 
             break
         else:
             print(f"Processing... ({state})")
     except Exception as e:
         print(f"Error checking status (attempt {attempt + 1}): {e}")
 else:
-    print("Timed out waiting for submission result.")
+    print("Timed out waiting for submission result after 5 minutes.")
+    sys.exit(1)
 
 # 7. Save locally for LeetHub sync
 print("Saving code locally for LeetHub sync...")
