@@ -44,8 +44,9 @@ graphql_query = {
     """
 }
 
-# Using cf_requests with Chrome impersonation to bypass Cloudflare
-res = cf_requests.post("https://leetcode.com/graphql", json=graphql_query, headers=headers, impersonate="chrome")
+# Fetch using cf_requests to bypass Cloudflare
+graphql_url = "https://leetcode.com/graphql"
+res = cf_requests.post(graphql_url, json=graphql_query, headers=headers, impersonate="chrome")
 if res.status_code != 200:
     print(f"Failed to fetch daily challenge: {res.status_code} - {res.text}")
     sys.exit(1)
@@ -103,21 +104,22 @@ else:
 
 try:
     raw_code = ai_res.json()["candidates"][0]["content"]["parts"][0]["text"]
-    clean_code = re.sub(r"^```python\s*|^```\s*|```$", "", raw_code, flags=re.MULTILINE).strip()
+    # Robust Regex Extract: Looks for code inside ```python ... ``` blocks, falls back to raw text if no blocks exist
+    match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+    clean_code = match.group(1).strip() if match else raw_code.strip()
 except Exception as e:
     print(f"Error parsing Gemini response: {e} - Response: {ai_res.text}")
     sys.exit(1)
 
 # 5. Submit solution to LeetCode
 print("Submitting solution to LeetCode...")
-submit_url = f"[https://leetcode.com/problems/](https://leetcode.com/problems/){slug}/submit/"
+submit_url = f"https://leetcode.com/problems/{slug}/submit/"
 submit_payload = {
     "lang": "python3",
     "question_id": q_id,
     "typed_code": clean_code
 }
 
-# Using cf_requests for the submission to bypass Cloudflare
 sub_res = cf_requests.post(submit_url, json=submit_payload, headers=headers, impersonate="chrome")
 if sub_res.status_code != 200:
     print(f"Submission request failed: {sub_res.status_code} - {sub_res.text}")
@@ -131,11 +133,10 @@ if not submission_id:
 print(f"Submission ID: {submission_id}. Checking result status...")
 
 # 6. Poll for the submission verdict
-check_url = f"[https://leetcode.com/submissions/detail/](https://leetcode.com/submissions/detail/){submission_id}/check/"
+check_url = f"https://leetcode.com/submissions/detail/{submission_id}/check/"
 for attempt in range(12):
     time.sleep(3)
     try:
-        # Using cf_requests for polling
         status_res = cf_requests.get(check_url, headers=headers, impersonate="chrome").json()
         state = status_res.get("state")
         
