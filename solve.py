@@ -25,6 +25,7 @@ if not all([LEETCODE_SESSION, CSRF_TOKEN, GEMINI_API_KEY]):
 mode_title = args.mode.capitalize()
 
 def send_telegram(message: str):
+    """Sends a markdown-formatted message to Telegram."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -78,9 +79,9 @@ elif args.mode == "random":
     skip_offset = random.randint(0, 2000)
     list_query = {
         "query": """
-        query problemsetQuestionList($limit: Int, $skip: Int) {
-            problemsetQuestionList(limit: $limit, skip: $skip) {
-                questions: data { titleSlug isPaidOnly status }
+        query problemsetQuestionListV2($limit: Int, $skip: Int) {
+            problemsetQuestionListV2(limit: $limit, skip: $skip) {
+                questions { titleSlug isPaidOnly status }
             }
         }
         """,
@@ -93,9 +94,10 @@ elif args.mode == "random":
         if not data_block:
             raise ValueError(f"No data returned from LeetCode: {res.text}")
             
-        questions = data_block.get("problemsetQuestionList", {}).get("questions", [])
+        # Extract questions using the updated V2 schema
+        questions = data_block.get("problemsetQuestionListV2", {}).get("questions", [])
         
-        # Filter locally in Python instead of trusting LeetCode's GraphQL filters
+        # Filter locally in Python
         free_questions = [q["titleSlug"] for q in questions if not q.get("isPaidOnly") and q.get("status") not in ("ac", "AC")]
         
         if not free_questions:
@@ -128,6 +130,7 @@ if not q_data:
 
 q_id = q_data["questionId"]
 slug = q_data["titleSlug"]
+# Sanitize title to prevent Telegram Markdown parser crashes
 safe_title = re.sub(r'[*_`\[\]]', '', q_data["title"])
 print(f"Problem Found: #{q_id} - {safe_title} ({slug})")
 
@@ -157,7 +160,8 @@ Problem:
 {q_data['content']}
 """
 
-gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+# Upgraded to gemini-2.5-flash to bypass the 404 error
+gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
 ai_payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
 for attempt in range(3):
