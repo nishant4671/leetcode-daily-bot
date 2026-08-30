@@ -1,59 +1,19 @@
-name: Daily LeetCode Auto-Solve
-
-on:
-  schedule:
-    # Runs at 12:15 AM UTC (5:45 AM IST) to safely avoid midnight API rollover issues
-    - cron: '15 0 * * *'
-  workflow_dispatch:
-
-jobs:
-  solve:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Bot Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Dependencies
-        # PHASE 3 FIX: Pinning curl_cffi to prevent ABI/OS breakage
-        run: pip install requests curl_cffi==0.16.2
-
-      - name: Run Auto-Solver
+- name: Run Auto-Solver (Daily Challenge)
         env:
           LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
           LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python solve.py
+        run: python solve.py --mode daily
 
-      - name: Checkout Target Repository
-        uses: actions/checkout@v4
-        with:
-          repository: nishant4671/leetcode
-          token: ${{ secrets.GH_PAT }}
-          path: target-repo
-          # PHASE 3 FIX: Shallow clone to save runner disk space
-          fetch-depth: 1
-
-      - name: Commit and Push to LeetHub Repo
-        run: |
-          mv [0-9][0-9][0-9][0-9]-* target-repo/ 2>/dev/null || echo "No folder to move"
-          
-          cd target-repo
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          git pull --rebase origin main
-          
-          git add .
-          if git diff-index --quiet HEAD --; then
-            echo "No changes to commit."
-          else
-            git commit -m "Auto-sync Daily Challenge - LeetCode Bot"
-            git push
-          fi
+      - name: Run Auto-Solver (Random Unsolved)
+        # if: always() ensures the Random problem still runs even if the Daily problem fails
+        if: always()
+        env:
+          LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
+          LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python solve.py --mode random
