@@ -1,4 +1,35 @@
-- name: Run Auto-Solver (Daily Challenge)
+name: Daily LeetCode Auto-Solve
+
+on:
+  schedule:
+    - cron: '15 0 * * *'
+  # This line brings back the "Run workflow" button
+  workflow_dispatch:
+
+jobs:
+  solve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Bot Repository
+        uses: actions/checkout@v4
+
+      - name: Checkout Target Repository
+        uses: actions/checkout@v4
+        with:
+          repository: nishant4671/leetcode
+          path: target-repo
+          # Ensure you are using your Personal Access Token secret here for push access
+          token: ${{ secrets.GH_PAT }} 
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install requests curl_cffi==0.16.2
+
+      - name: Run Auto-Solver (Daily Challenge)
         env:
           LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
           LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
@@ -17,3 +48,23 @@
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python solve.py --mode random
+
+      - name: Commit and Push to LeetHub Repo
+        # if: always() ensures solutions are saved even if one of the modes crashed
+        if: always()
+        run: |
+          mv [0-9][0-9][0-9][0-9]-* target-repo/ 2>/dev/null || echo "No folder to move"
+          
+          cd target-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git pull --rebase origin main
+          
+          git add .
+          if git diff-index --quiet HEAD --; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-sync Daily & Random Challenge - LeetCode Bot"
+            git push
+          fi
