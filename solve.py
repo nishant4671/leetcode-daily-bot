@@ -81,7 +81,7 @@ elif args.mode == "random":
         "query": """
         query problemsetQuestionListV2($limit: Int, $skip: Int) {
             problemsetQuestionListV2(limit: $limit, skip: $skip) {
-                questions { titleSlug isPaidOnly status }
+                questions { titleSlug paidOnly status }
             }
         }
         """,
@@ -97,9 +97,8 @@ elif args.mode == "random":
         # Extract questions using the updated V2 schema
         questions = data_block.get("problemsetQuestionListV2", {}).get("questions", [])
         
-        # Filter locally in Python
-        free_questions = [q["titleSlug"] for q in questions if not q.get("isPaidOnly") and q.get("status") not in ("ac", "AC")]
-        
+        # Filter locally in Python (Updated to paidOnly)
+        free_questions = [q["titleSlug"] for q in questions if not q.get("paidOnly") and q.get("status") not in ("ac", "AC")]
         if not free_questions:
             print("No free unsolved problems in this batch. Exiting gracefully.")
             sys.exit(0)
