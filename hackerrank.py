@@ -121,12 +121,27 @@ print("Submitting solution...")
 submit_url = f"https://www.hackerrank.com/rest/contests/master/challenges/{slug}/submissions"
 payload = {"code": clean_code, "language": "python3", "contest_slug": "master"}
 
-sub_res = cf_requests.post(submit_url, json=payload, headers=headers, impersonate="chrome")
+# Inject context-specific security headers for the POST request
+submit_headers = headers.copy()
+submit_headers["Referer"] = f"https://www.hackerrank.com/challenges/{slug}/problem"
+submit_headers["Origin"] = "https://www.hackerrank.com"
+
+sub_res = cf_requests.post(submit_url, json=payload, headers=submit_headers, impersonate="chrome")
 if sub_res.status_code != 200:
-    send_telegram(f"❌ *HackerRank Submission Failed*\nHTTP status: `{sub_res.status_code}`")
+    send_telegram(f"❌ *HackerRank Submission Failed*\nHTTP status: `{sub_res.status_code}`\nResponse: `{sub_res.text}`")
     sys.exit(1)
 
-submission_id = sub_res.json().get("model", {}).get("id")
+sub_json = sub_res.json()
+
+# Defensive Parsing: Check if HackerRank rejected the payload (model = False)
+model_data = sub_json.get("model")
+if not isinstance(model_data, dict) or "id" not in model_data:
+    err_msg = sub_json.get("message", "Unknown error")
+    print(f"HackerRank rejected submission: {sub_json}")
+    send_telegram(f"❌ *HackerRank Submission Rejected*\nMessage: `{err_msg}`")
+    sys.exit(1)
+
+submission_id = model_data["id"]
 
 # 5. Poll for Verdict
 print(f"Submission ID: {submission_id}. Polling for verdict...")
