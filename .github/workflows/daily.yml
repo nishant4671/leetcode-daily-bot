@@ -49,6 +49,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python solve.py --mode random
 
+      - name: Run Auto-Solver (HackerRank)
+        if: always()
+        env:
+          HACKERRANK_COOKIE: ${{ secrets.HACKERRANK_COOKIE }}
+          HACKERRANK_CSRF: ${{ secrets.HACKERRANK_CSRF }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python hackerrank.py
+
       - name: Commit and Push to LeetHub Repo
         # if: always() ensures solutions are saved even if one of the modes crashed
         if: always()
