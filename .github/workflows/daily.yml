@@ -59,6 +59,25 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hackerrank.py
 
+      - name: Run Auto-Solver (Striver A2Z)
+        if: always()
+        env:
+          LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
+          LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python striver.py
+
+      - name: Save Striver Progress to Bot Repo
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add striver_progress.txt
+          git commit -m "Update Striver progress index" || echo "No index changes to commit"
+          git push  
+
       - name: Commit and Push to LeetHub Repo
         # if: always() ensures solutions are saved even if one of the modes crashed
         if: always()
