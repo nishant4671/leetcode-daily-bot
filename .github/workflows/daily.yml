@@ -5,7 +5,9 @@ on:
     - cron: '15 0 * * *'
   # This line brings back the "Run workflow" button
   workflow_dispatch:
-
+# Add this specific block to grant push access
+permissions:
+  contents: write
 jobs:
   solve:
     runs-on: ubuntu-latest
