@@ -79,21 +79,16 @@ jobs:
           git push  
 
       - name: Commit and Push to LeetHub Repo
-        # if: always() ensures solutions are saved even if one of the modes crashed
         if: always()
         run: |
-          mv [0-9][0-9][0-9][0-9]-* target-repo/ 2>/dev/null || echo "No folder to move"
+          # Move all three folder naming conventions into the target repository
+          mv [0-9][0-9][0-9][0-9]-* target-repo/ 2>/dev/null || true
+          mv HackerRank-* target-repo/ 2>/dev/null || true
+          mv Striver-* target-repo/ 2>/dev/null || true
           
           cd target-repo
           git config user.name "nishant4671"
-          git config user.email "nishantkr4671@gmail.com"
-          
-          git pull --rebase origin main
-          
+          git config user.email "your-github-noreply-email@users.noreply.github.com"
           git add .
-          if git diff-index --quiet HEAD --; then
-            echo "No changes to commit."
-          else
-            git commit -m "Auto-sync Daily & Random Challenge - LeetCode Bot"
-            git push
-          fi
+          git commit -m "Auto-Solved: Daily, Random, and Striver" || echo "No changes to commit"
+          git push
