@@ -90,7 +90,7 @@ jobs:
           
           cd target-repo
           git config user.name "nishant4671"
-          git config user.email "your-github-noreply-email@users.noreply.github.com"
+          git config user.email "nishantkr4671@gmail.com"
           git add .
           git commit -m "Auto-Solved: Daily, Random, and Striver" || echo "No changes to commit"
           git push
