@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import time
+import random
 import requests
 from curl_cffi import requests as cf_requests
 
@@ -107,19 +108,77 @@ Problem:
 {q_data['content']}
 """
 
-gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-ai_payload = {"contents": [{"parts": [{"text": prompt}]}]}
+models = ["gemini-2.5-flash", "gemini-1.5-flash"]
+clean_code = None
 
-for _ in range(3):
-    ai_res = requests.post(gemini_url, json=ai_payload)
-    if ai_res.status_code == 200:
-        raw_code = ai_res.json()["candidates"][0]["content"]["parts"][0]["text"]
-        match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
-        clean_code = match.group(1).strip() if match else raw_code.strip()
+for model in models:
+    if clean_code:
         break
-    time.sleep(5)
-else:
-    send_telegram("❌ *Striver Bot Failed*\nGemini API timeout.")
+    print(f"Trying Gemini model: {model}...")
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+    ai_payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    for attempt in range(3):
+        ai_res = requests.post(gemini_url, json=ai_payload)
+        if ai_res.status_code == 200:
+            try:
+                raw_code = ai_res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                clean_code = match.group(1).strip() if match else raw_code.strip()
+                break
+            except Exception as e:
+                print(f"Code extraction error with {model}: {e}")
+                break
+        elif ai_res.status_code in [429, 503]:
+            sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+            print(f"Gemini API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+            time.sleep(sleep_time)
+        else:
+            print(f"Gemini HTTP Error {ai_res.status_code}: {ai_res.text}")
+            break
+
+if not clean_code:
+    print("Gemini models failed. Failing over to Groq API...")
+    groq_api_key = os.environ.get("GROQ_API_KEY")
+    if not groq_api_key:
+        send_telegram("❌ *Striver Bot Failed*\nGROQ_API_KEY not found.")
+        sys.exit(1)
+        
+    groq_url = "https://api.groq.com/openai/v1/chat/completions"
+    groq_headers = {
+        "Authorization": f"Bearer {groq_api_key}",
+        "Content-Type": "application/json"
+    }
+    groq_payload = {
+        "model": "llama-3.3-70b-versatile",
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": "You are an elite competitive programmer. Return only clean, runnable code."},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    
+    for attempt in range(3):
+        groq_res = requests.post(groq_url, json=groq_payload, headers=groq_headers)
+        if groq_res.status_code == 200:
+            try:
+                raw_code = groq_res.json()["choices"][0]["message"]["content"]
+                match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                clean_code = match.group(1).strip() if match else raw_code.strip()
+                break
+            except Exception as e:
+                print(f"Code extraction error with Groq: {e}")
+                break
+        elif groq_res.status_code in [429, 503]:
+            sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+            print(f"Groq API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+            time.sleep(sleep_time)
+        else:
+            send_telegram(f"❌ *Striver Bot Failed*\nGroq HTTP Error {groq_res.status_code}: {groq_res.text}")
+            sys.exit(1)
+
+if not clean_code:
+    send_telegram("❌ *Striver Bot Failed*\nAll AI models failed to generate valid code.")
     sys.exit(1)
 
 # 4. Submit to LeetCode

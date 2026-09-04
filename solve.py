@@ -159,37 +159,84 @@ Problem:
 {q_data['content']}
 """
 
-# Upgraded to gemini-2.5-flash to bypass the 404 error
-gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-ai_payload = {"contents": [{"parts": [{"text": prompt}]}]}
+models = ["gemini-2.5-flash", "gemini-1.5-flash"]
+clean_code = None
 
-for attempt in range(3):
-    ai_res = requests.post(gemini_url, json=ai_payload)
-    if ai_res.status_code == 200:
+for model in models:
+    if clean_code:
         break
-    elif ai_res.status_code == 503:
-        print("Gemini API overloaded. Retrying in 10s...")
-        time.sleep(10)
-    else:
-        err = f"Gemini HTTP Error {ai_res.status_code}: {ai_res.text}"
+    print(f"Trying Gemini model: {model}...")
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+    ai_payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    for attempt in range(3):
+        ai_res = requests.post(gemini_url, json=ai_payload)
+        if ai_res.status_code == 200:
+            try:
+                ai_json = ai_res.json()
+                if "candidates" not in ai_json:
+                    raise ValueError(f"Unexpected Gemini response format: {ai_json}")
+                raw_code = ai_json["candidates"][0]["content"]["parts"][0]["text"]
+                match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                clean_code = match.group(1).strip() if match else raw_code.strip()
+                break
+            except Exception as e:
+                print(f"Code extraction error with {model}: {e}")
+                break
+        elif ai_res.status_code in [429, 503]:
+            sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+            print(f"Gemini API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+            time.sleep(sleep_time)
+        else:
+            print(f"Gemini HTTP Error {ai_res.status_code}: {ai_res.text}")
+            break
+
+if not clean_code:
+    print("Gemini models failed. Failing over to Groq API...")
+    groq_api_key = os.environ.get("GROQ_API_KEY")
+    if not groq_api_key:
+        err = "GROQ_API_KEY not found."
         print(err)
         send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
         sys.exit(1)
-else:
-    print("Gemini API timed out after 3 retries.")
-    send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\nGemini API timed out.")
-    sys.exit(1)
-
-try:
-    ai_json = ai_res.json()
-    if "candidates" not in ai_json:
-        raise ValueError(f"Unexpected Gemini response format: {ai_json}")
         
-    raw_code = ai_json["candidates"][0]["content"]["parts"][0]["text"]
-    match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
-    clean_code = match.group(1).strip() if match else raw_code.strip()
-except Exception as e:
-    err = f"Code extraction error: {e}"
+    groq_url = "https://api.groq.com/openai/v1/chat/completions"
+    groq_headers = {
+        "Authorization": f"Bearer {groq_api_key}",
+        "Content-Type": "application/json"
+    }
+    groq_payload = {
+        "model": "llama-3.3-70b-versatile",
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": "You are an elite competitive programmer. Return only clean, runnable code."},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    
+    for attempt in range(3):
+        groq_res = requests.post(groq_url, json=groq_payload, headers=groq_headers)
+        if groq_res.status_code == 200:
+            try:
+                raw_code = groq_res.json()["choices"][0]["message"]["content"]
+                match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                clean_code = match.group(1).strip() if match else raw_code.strip()
+                break
+            except Exception as e:
+                print(f"Code extraction error with Groq: {e}")
+                break
+        elif groq_res.status_code in [429, 503]:
+            sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+            print(f"Groq API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+            time.sleep(sleep_time)
+        else:
+            err = f"Groq HTTP Error {groq_res.status_code}: {groq_res.text}"
+            print(err)
+            send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
+            sys.exit(1)
+
+if not clean_code:
+    err = "All AI models failed to generate valid code."
     print(err)
     send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
     sys.exit(1)
