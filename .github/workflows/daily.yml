@@ -77,8 +77,8 @@ jobs:
       - name: Save Striver Progress to Bot Repo
         if: always()
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "nishant4671"
+          git config --global user.email "nishantkr4671@gmail.com"
           git add striver_progress.txt
           git commit -m "Update Striver progress index" || echo "No index changes to commit"
           git push  
