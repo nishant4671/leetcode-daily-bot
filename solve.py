@@ -17,6 +17,7 @@ CSRF_TOKEN = os.getenv("LEETCODE_CSRF_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 if not all([LEETCODE_SESSION, CSRF_TOKEN, GEMINI_API_KEY]):
     print("Error: Missing required environment variables.")
@@ -35,6 +36,177 @@ def send_telegram(message: str):
     except Exception as e:
         print(f"Error sending Telegram notification: {e}")
 
+def query_groq_deepseek(prompt: str) -> str:
+    """
+    Query Groq's DeepSeek-R1 distilled model for code generation.
+    
+    Args:
+        prompt: The problem prompt to send to DeepSeek
+        
+    Returns:
+        Extracted clean code without thinking tags, or empty string on failure
+    """
+    if not GROQ_API_KEY:
+        print("GROQ_API_KEY not set. Skipping DeepSeek.")
+        return ""
+    
+    print("Attempting DeepSeek-R1 distilled model on Groq...")
+    
+    groq_url = "https://api.groq.com/openai/v1/chat/completions"
+    groq_headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    groq_payload = {
+        "model": "deepseek-r1-distill-llama-70b",
+        "temperature": 0.6,
+        "messages": [
+            {
+                "role": "user",
+                "content": f"You are an elite competitive programmer. Think step-by-step in <think> tags to map out state transitions and constraints before returning clean, runnable Python code.\n\n{prompt}"
+            }
+        ]
+    }
+    
+    for attempt in range(3):
+        try:
+            groq_res = requests.post(groq_url, json=groq_payload, headers=groq_headers, timeout=120)
+            if groq_res.status_code == 200:
+                try:
+                    raw_code = groq_res.json()["choices"][0]["message"]["content"]
+                    # Strip <think>...</think> tags before extracting code
+                    raw_code = re.sub(r'<think>.*?</think>', '', raw_code, flags=re.DOTALL)
+                    # Try to extract code from markdown blocks
+                    match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                    clean_code = match.group(1).strip() if match else raw_code.strip()
+                    if clean_code:
+                        print("✓ DeepSeek-R1 generated valid code.")
+                        return clean_code
+                    else:
+                        print("DeepSeek-R1 generated empty code.")
+                        return ""
+                except Exception as e:
+                    print(f"Code extraction error with DeepSeek-R1: {e}")
+                    return ""
+            elif groq_res.status_code in [429, 503]:
+                sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+                print(f"DeepSeek-R1 API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+                time.sleep(sleep_time)
+            else:
+                print(f"DeepSeek-R1 HTTP Error {groq_res.status_code}: {groq_res.text}")
+                return ""
+        except Exception as e:
+            print(f"Exception while querying DeepSeek-R1: {e}")
+            return ""
+    
+    return ""
+
+def generate_solution_with_fallback(prompt: str, difficulty: str) -> str:
+    """
+    Generate solution code with difficulty-based routing.
+    
+    Args:
+        prompt: The problem prompt
+        difficulty: Problem difficulty level ("Easy", "Medium", "Hard")
+        
+    Returns:
+        Generated clean code
+    """
+    clean_code = None
+    
+    # Route to DeepSeek-R1 for Hard problems
+    if difficulty == "Hard":
+        print(f"[Hard Problem] Routing to DeepSeek-R1 distilled model...")
+        clean_code = query_groq_deepseek(prompt)
+        if clean_code:
+            return clean_code
+        else:
+            print("DeepSeek-R1 failed. Falling back to Gemini Flash models...")
+    
+    # Standard Gemini Flash fallback for Easy/Medium or if Hard DeepSeek fails
+    models = ["gemini-2.5-flash", "gemini-1.5-flash"]
+    
+    for model in models:
+        if clean_code:
+            break
+        print(f"Trying Gemini model: {model}...")
+        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        ai_payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        
+        for attempt in range(3):
+            ai_res = requests.post(gemini_url, json=ai_payload)
+            if ai_res.status_code == 200:
+                try:
+                    ai_json = ai_res.json()
+                    if "candidates" not in ai_json:
+                        raise ValueError(f"Unexpected Gemini response format: {ai_json}")
+                    raw_code = ai_json["candidates"][0]["content"]["parts"][0]["text"]
+                    match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                    clean_code = match.group(1).strip() if match else raw_code.strip()
+                    break
+                except Exception as e:
+                    print(f"Code extraction error with {model}: {e}")
+                    break
+            elif ai_res.status_code in [429, 503]:
+                sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+                print(f"Gemini API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+                time.sleep(sleep_time)
+            else:
+                print(f"Gemini HTTP Error {ai_res.status_code}: {ai_res.text}")
+                break
+    
+    # Fallback to Groq Llama if Gemini fails
+    if not clean_code:
+        print("Gemini models failed. Falling over to Groq Llama API...")
+        if not GROQ_API_KEY:
+            err = "GROQ_API_KEY not found."
+            print(err)
+            send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
+            sys.exit(1)
+            
+        groq_url = "https://api.groq.com/openai/v1/chat/completions"
+        groq_headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        groq_payload = {
+            "model": "llama-3.3-70b-versatile",
+            "temperature": 0.2,
+            "messages": [
+                {"role": "system", "content": "You are an elite competitive programmer. Return only clean, runnable code."},
+                {"role": "user", "content": prompt}
+            ]
+        }
+        
+        for attempt in range(3):
+            groq_res = requests.post(groq_url, json=groq_payload, headers=groq_headers)
+            if groq_res.status_code == 200:
+                try:
+                    raw_code = groq_res.json()["choices"][0]["message"]["content"]
+                    match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                    clean_code = match.group(1).strip() if match else raw_code.strip()
+                    break
+                except Exception as e:
+                    print(f"Code extraction error with Groq Llama: {e}")
+                    break
+            elif groq_res.status_code in [429, 503]:
+                sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+                print(f"Groq API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+                time.sleep(sleep_time)
+            else:
+                err = f"Groq HTTP Error {groq_res.status_code}: {groq_res.text}"
+                print(err)
+                send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
+                sys.exit(1)
+    
+    if not clean_code:
+        err = "All AI models failed to generate valid code."
+        print(err)
+        send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
+        sys.exit(1)
+    
+    return clean_code
+
 headers = {
     "Content-Type": "application/json",
     "Referer": "https://leetcode.com/",
@@ -46,6 +218,7 @@ headers = {
 
 graphql_url = "https://leetcode.com/graphql"
 q_data = None
+difficulty = None
 
 # 2. Fetch Problem Data based on Mode
 if args.mode == "daily":
@@ -54,7 +227,7 @@ if args.mode == "daily":
         "query": """
         query questionOfToday {
             activeDailyCodingChallengeQuestion {
-                question { questionId titleSlug title content codeSnippets { langSlug code } }
+                question { questionId titleSlug title content difficulty codeSnippets { langSlug code } }
             }
         }
         """
@@ -67,6 +240,7 @@ if args.mode == "daily":
         sys.exit(1)
     try:
         q_data = res.json()["data"]["activeDailyCodingChallengeQuestion"]["question"]
+        difficulty = q_data.get("difficulty", "Unknown")
     except Exception as e:
         err = f"Parsing error (Daily): {e} | JSON: {res.text}"
         print(err)
@@ -109,7 +283,7 @@ elif args.mode == "random":
             "query": """
             query questionData($titleSlug: String!) {
                 question(titleSlug: $titleSlug) {
-                    questionId titleSlug title content codeSnippets { langSlug code }
+                    questionId titleSlug title content difficulty codeSnippets { langSlug code }
                 }
             }
             """,
@@ -117,6 +291,7 @@ elif args.mode == "random":
         }
         res2 = cf_requests.post(graphql_url, json=detail_query, headers=headers, impersonate="chrome")
         q_data = res2.json()["data"]["question"]
+        difficulty = q_data.get("difficulty", "Unknown")
     except Exception as e:
         err = f"Random fetch error: {e}"
         print(err)
@@ -132,6 +307,7 @@ slug = q_data["titleSlug"]
 # Sanitize title to prevent Telegram Markdown parser crashes
 safe_title = re.sub(r'[*_`\[\]]', '', q_data["title"])
 print(f"Problem Found: #{q_id} - {safe_title} ({slug})")
+print(f"Difficulty: {difficulty}")
 
 if not q_data.get("codeSnippets"):
     print("Skipped: No code snippets available.")
@@ -144,8 +320,8 @@ if not py_snippet:
     send_telegram(f"⚠️ *LeetCode {mode_title} Skipped*\nProblem: #{q_id} - *{safe_title}*\nReason: Python3 not supported.")
     sys.exit(0)
 
-# 3. Request solution from Gemini API
-print("Generating solution via Gemini...")
+# 3. Request solution from AI with difficulty-based routing
+print("Generating solution via AI...")
 prompt = f"""
 You are an expert algorithm problem solver. Solve this LeetCode problem in Python 3.
 Ensure optimal time and space complexity.
@@ -159,87 +335,7 @@ Problem:
 {q_data['content']}
 """
 
-models = ["gemini-2.5-flash", "gemini-1.5-flash"]
-clean_code = None
-
-for model in models:
-    if clean_code:
-        break
-    print(f"Trying Gemini model: {model}...")
-    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-    ai_payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    
-    for attempt in range(3):
-        ai_res = requests.post(gemini_url, json=ai_payload)
-        if ai_res.status_code == 200:
-            try:
-                ai_json = ai_res.json()
-                if "candidates" not in ai_json:
-                    raise ValueError(f"Unexpected Gemini response format: {ai_json}")
-                raw_code = ai_json["candidates"][0]["content"]["parts"][0]["text"]
-                match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
-                clean_code = match.group(1).strip() if match else raw_code.strip()
-                break
-            except Exception as e:
-                print(f"Code extraction error with {model}: {e}")
-                break
-        elif ai_res.status_code in [429, 503]:
-            sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
-            print(f"Gemini API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
-            time.sleep(sleep_time)
-        else:
-            print(f"Gemini HTTP Error {ai_res.status_code}: {ai_res.text}")
-            break
-
-if not clean_code:
-    print("Gemini models failed. Failing over to Groq API...")
-    groq_api_key = os.environ.get("GROQ_API_KEY")
-    if not groq_api_key:
-        err = "GROQ_API_KEY not found."
-        print(err)
-        send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
-        sys.exit(1)
-        
-    groq_url = "https://api.groq.com/openai/v1/chat/completions"
-    groq_headers = {
-        "Authorization": f"Bearer {groq_api_key}",
-        "Content-Type": "application/json"
-    }
-    groq_payload = {
-        "model": "llama-3.3-70b-versatile",
-        "temperature": 0.2,
-        "messages": [
-            {"role": "system", "content": "You are an elite competitive programmer. Return only clean, runnable code."},
-            {"role": "user", "content": prompt}
-        ]
-    }
-    
-    for attempt in range(3):
-        groq_res = requests.post(groq_url, json=groq_payload, headers=groq_headers)
-        if groq_res.status_code == 200:
-            try:
-                raw_code = groq_res.json()["choices"][0]["message"]["content"]
-                match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
-                clean_code = match.group(1).strip() if match else raw_code.strip()
-                break
-            except Exception as e:
-                print(f"Code extraction error with Groq: {e}")
-                break
-        elif groq_res.status_code in [429, 503]:
-            sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
-            print(f"Groq API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
-            time.sleep(sleep_time)
-        else:
-            err = f"Groq HTTP Error {groq_res.status_code}: {groq_res.text}"
-            print(err)
-            send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
-            sys.exit(1)
-
-if not clean_code:
-    err = "All AI models failed to generate valid code."
-    print(err)
-    send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
-    sys.exit(1)
+clean_code = generate_solution_with_fallback(prompt, difficulty)
 
 # 4. Submit solution to LeetCode
 print("Submitting solution to LeetCode...")
@@ -274,6 +370,7 @@ for attempt in range(60):
                     f"📌 *Problem:* #{q_id} - {safe_title}\n"
                     f"⏱ *Runtime:* `{runtime}`\n"
                     f"💾 *Memory:* `{memory}`\n"
+                    f"📊 *Difficulty:* {difficulty}\n"
                     f"🔗 [View Problem](https://leetcode.com/problems/{slug}/)"
                 )
             else:
