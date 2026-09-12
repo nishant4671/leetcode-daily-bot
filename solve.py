@@ -5,9 +5,126 @@ import time
 import random
 import argparse
 import requests
+import ast
 from curl_cffi import requests as cf_requests
 
-# 1. Parse execution mode
+# ============================================================================
+# 1. ENVIRONMENT VARIABLES HARD CHECK (FAIL FAST)
+# ============================================================================
+def verify_environment():
+    """
+    Verify all required environment variables are present before any execution.
+    Raises ValueError immediately if any are missing.
+    """
+    required_vars = {
+        "GEMINI_API_KEY": "Google Gemini API Key",
+        "GROQ_API_KEY": "Groq API Key",
+        "LEETCODE_SESSION": "LeetCode session cookie",
+        "LEETCODE_CSRF_TOKEN": "LeetCode CSRF token",
+    }
+    
+    missing = []
+    for var_name, description in required_vars.items():
+        if not os.environ.get(var_name):
+            missing.append(f"{var_name} ({description})")
+    
+    if missing:
+        error_msg = "Error: Missing required environment variables:\n" + "\n".join(f"  - {m}" for m in missing)
+        print(error_msg)
+        raise ValueError(error_msg)
+
+
+# ============================================================================
+# 2. LEETCODE SESSION PRE-FLIGHT VALIDATION
+# ============================================================================
+def verify_leetcode_session():
+    """
+    Verify LeetCode session is active by making a lightweight GraphQL request.
+    Raises EnvironmentError if session is invalid or expired.
+    """
+    leetcode_session = os.environ.get("LEETCODE_SESSION")
+    csrf_token = os.environ.get("LEETCODE_CSRF_TOKEN")
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Referer": "https://leetcode.com/",
+        "Origin": "https://leetcode.com",
+        "x-csrftoken": csrf_token,
+        "Cookie": f"LEETCODE_SESSION={leetcode_session}; csrftoken={csrf_token};",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    # Lightweight query to check session validity (query user profile)
+    test_query = {
+        "query": """
+        query me {
+            me {
+                username
+            }
+        }
+        """
+    }
+    
+    try:
+        response = requests.post("https://leetcode.com/graphql", json=test_query, headers=headers, timeout=10)
+        
+        if response.status_code == 403:
+            raise EnvironmentError("LeetCode session cookie has expired. Please refresh Secrets.")
+        
+        if response.status_code != 200:
+            raise EnvironmentError(f"LeetCode session validation failed with status {response.status_code}. Please refresh Secrets.")
+        
+        data = response.json()
+        if data.get("errors") or not data.get("data", {}).get("me"):
+            raise EnvironmentError("LeetCode session is invalid or user not authenticated. Please refresh Secrets.")
+        
+        print("✓ LeetCode session verified successfully.")
+        
+    except requests.exceptions.RequestException as e:
+        raise EnvironmentError(f"Failed to validate LeetCode session: {str(e)}. Please check your network connection.")
+
+
+# ============================================================================
+# 3. CODE SYNTAX PRE-FLIGHT VALIDATION (AST VALIDATION)
+# ============================================================================
+def validate_code_syntax(code: str) -> bool:
+    """
+    Validate generated Python code before submission using AST parsing.
+    Returns True if code is syntactically valid, False otherwise.
+    """
+    try:
+        ast.parse(code)
+        return True
+    except SyntaxError as e:
+        print(f"SyntaxError detected in LLM output: {e}")
+        return False
+
+
+# ============================================================================
+# 4. SAFE ERROR LOGGING (PREVENT SECRET LEAKS)
+# ============================================================================
+def log_http_error(url: str, status_code: int, error_detail: str = ""):
+    """
+    Log HTTP errors safely without exposing headers or sensitive data.
+    """
+    print(f"Failed to connect to {url}: HTTP {status_code}")
+    if error_detail:
+        print(f"Details: {error_detail}")
+
+
+# ============================================================================
+# MAIN EXECUTION STARTS HERE
+# ============================================================================
+
+# Verify environment and session BEFORE any other operations
+try:
+    verify_environment()
+    verify_leetcode_session()
+except (ValueError, EnvironmentError) as e:
+    print(str(e))
+    sys.exit(1)
+
+# Parse execution mode
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", choices=["daily", "random"], default="daily")
 args = parser.parse_args()
@@ -18,10 +135,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-if not all([LEETCODE_SESSION, CSRF_TOKEN, GEMINI_API_KEY]):
-    print("Error: Missing required environment variables.")
-    sys.exit(1)
 
 mode_title = args.mode.capitalize()
 
@@ -63,7 +176,7 @@ def query_groq_hard_problem(prompt: str) -> str:
         "messages": [
             {
                 "role": "system",
-                "content": "You are an elite competitive programmer. For this Hard problem, explicitly plan your dynamic programming states, time complexity, and tie-breaking logic in Python comments before writing the final runnable code."
+                "content": "You are an elite competitive programmer. For this Hard problem, explicitly plan your dynamic programming states, time complexity, and tie-breaking logic in Python comme[...]"
             },
             {
                 "role": "user",
@@ -81,9 +194,14 @@ def query_groq_hard_problem(prompt: str) -> str:
                     # Try to extract code from markdown blocks
                     match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
                     clean_code = match.group(1).strip() if match else raw_code.strip()
-                    if clean_code:
+                    
+                    # Validate syntax before returning
+                    if clean_code and validate_code_syntax(clean_code):
                         print("✓ Groq gpt-oss-120b generated valid code.")
                         return clean_code
+                    elif clean_code:
+                        print("Code generated but contains syntax errors. Triggering retry...")
+                        return ""
                     else:
                         print("Groq gpt-oss-120b generated empty code.")
                         return ""
@@ -95,7 +213,7 @@ def query_groq_hard_problem(prompt: str) -> str:
                 print(f"Groq gpt-oss-120b API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
                 time.sleep(sleep_time)
             else:
-                print(f"Groq gpt-oss-120b HTTP Error {groq_res.status_code}: {groq_res.text}")
+                log_http_error(groq_url, groq_res.status_code, "Groq API error")
                 return ""
         except Exception as e:
             print(f"Exception while querying Groq gpt-oss-120b: {e}")
@@ -136,25 +254,38 @@ def generate_solution_with_fallback(prompt: str, difficulty: str) -> str:
         ai_payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
         for attempt in range(3):
-            ai_res = requests.post(gemini_url, json=ai_payload)
-            if ai_res.status_code == 200:
-                try:
-                    ai_json = ai_res.json()
-                    if "candidates" not in ai_json:
-                        raise ValueError(f"Unexpected Gemini response format: {ai_json}")
-                    raw_code = ai_json["candidates"][0]["content"]["parts"][0]["text"]
-                    match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
-                    clean_code = match.group(1).strip() if match else raw_code.strip()
+            try:
+                ai_res = requests.post(gemini_url, json=ai_payload)
+                if ai_res.status_code == 200:
+                    try:
+                        ai_json = ai_res.json()
+                        if "candidates" not in ai_json:
+                            raise ValueError(f"Unexpected Gemini response format")
+                        raw_code = ai_json["candidates"][0]["content"]["parts"][0]["text"]
+                        match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                        clean_code = match.group(1).strip() if match else raw_code.strip()
+                        
+                        # Validate syntax before returning
+                        if clean_code and validate_code_syntax(clean_code):
+                            break
+                        elif clean_code:
+                            print(f"Code generated but contains syntax errors. Retrying with {model}...")
+                            clean_code = None
+                            break
+                        else:
+                            break
+                    except Exception as e:
+                        print(f"Code extraction error with {model}: {e}")
+                        break
+                elif ai_res.status_code in [429, 503]:
+                    sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+                    print(f"Gemini API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+                    time.sleep(sleep_time)
+                else:
+                    log_http_error(gemini_url, ai_res.status_code)
                     break
-                except Exception as e:
-                    print(f"Code extraction error with {model}: {e}")
-                    break
-            elif ai_res.status_code in [429, 503]:
-                sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
-                print(f"Gemini API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
-                time.sleep(sleep_time)
-            else:
-                print(f"Gemini HTTP Error {ai_res.status_code}: {ai_res.text}")
+            except Exception as e:
+                print(f"Exception while querying {model}: {e}")
                 break
     
     # Fallback to Groq Llama if Gemini fails
@@ -181,25 +312,36 @@ def generate_solution_with_fallback(prompt: str, difficulty: str) -> str:
         }
         
         for attempt in range(3):
-            groq_res = requests.post(groq_url, json=groq_payload, headers=groq_headers)
-            if groq_res.status_code == 200:
-                try:
-                    raw_code = groq_res.json()["choices"][0]["message"]["content"]
-                    match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
-                    clean_code = match.group(1).strip() if match else raw_code.strip()
+            try:
+                groq_res = requests.post(groq_url, json=groq_payload, headers=groq_headers, timeout=120)
+                if groq_res.status_code == 200:
+                    try:
+                        raw_code = groq_res.json()["choices"][0]["message"]["content"]
+                        match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
+                        clean_code = match.group(1).strip() if match else raw_code.strip()
+                        
+                        # Validate syntax before returning
+                        if clean_code and validate_code_syntax(clean_code):
+                            break
+                        elif clean_code:
+                            print("Code generated but contains syntax errors. Retrying...")
+                            clean_code = None
+                            break
+                        else:
+                            break
+                    except Exception as e:
+                        print(f"Code extraction error with Groq Llama: {e}")
+                        break
+                elif groq_res.status_code in [429, 503]:
+                    sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+                    print(f"Groq API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+                    time.sleep(sleep_time)
+                else:
+                    log_http_error(groq_url, groq_res.status_code)
                     break
-                except Exception as e:
-                    print(f"Code extraction error with Groq Llama: {e}")
-                    break
-            elif groq_res.status_code in [429, 503]:
-                sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
-                print(f"Groq API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
-                time.sleep(sleep_time)
-            else:
-                err = f"Groq HTTP Error {groq_res.status_code}: {groq_res.text}"
-                print(err)
-                send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
-                sys.exit(1)
+            except Exception as e:
+                print(f"Exception while querying Groq Llama: {e}")
+                break
     
     if not clean_code:
         err = "All AI models failed to generate valid code."
@@ -236,15 +378,14 @@ if args.mode == "daily":
     }
     res = cf_requests.post(graphql_url, json=query, headers=headers, impersonate="chrome")
     if res.status_code != 200:
-        err = f"HTTP Error {res.status_code}: {res.text}"
-        print(err)
-        send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{err}`")
+        log_http_error(graphql_url, res.status_code, "Failed to fetch daily problem")
+        send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\nHTTP {res.status_code}")
         sys.exit(1)
     try:
         q_data = res.json()["data"]["activeDailyCodingChallengeQuestion"]["question"]
         difficulty = q_data.get("difficulty", "Unknown")
     except Exception as e:
-        err = f"Parsing error (Daily): {e} | JSON: {res.text}"
+        err = f"Parsing error (Daily): {e}"
         print(err)
         send_telegram(f"❌ *LeetCode {mode_title} Bot Failed*\n`{e}`")
         sys.exit(1)
@@ -268,7 +409,7 @@ elif args.mode == "random":
     try:
         data_block = res.json().get("data", {})
         if not data_block:
-            raise ValueError(f"No data returned from LeetCode: {res.text}")
+            raise ValueError(f"No data returned from LeetCode")
             
         # Extract questions using the updated V2 schema
         questions = data_block.get("problemsetQuestionListV2", {}).get("questions", [])
@@ -344,14 +485,18 @@ print("Submitting solution to LeetCode...")
 submit_url = f"https://leetcode.com/problems/{slug}/submit/"
 submit_payload = {"lang": "python3", "question_id": q_id, "typed_code": clean_code}
 
-sub_res = cf_requests.post(submit_url, json=submit_payload, headers=headers, impersonate="chrome")
-if sub_res.status_code != 200:
-    err = f"Submission HTTP status: {sub_res.status_code} | {sub_res.text}"
-    print(err)
-    send_telegram(f"❌ *LeetCode {mode_title} Submission Failed*\n`{err}`")
-    sys.exit(1)
+try:
+    sub_res = cf_requests.post(submit_url, json=submit_payload, headers=headers, impersonate="chrome")
+    if sub_res.status_code != 200:
+        log_http_error(submit_url, sub_res.status_code)
+        send_telegram(f"❌ *LeetCode {mode_title} Submission Failed*\nHTTP {sub_res.status_code}")
+        sys.exit(1)
 
-submission_id = sub_res.json().get("submission_id")
+    submission_id = sub_res.json().get("submission_id")
+except Exception as e:
+    print(f"Exception during submission: {e}")
+    send_telegram(f"❌ *LeetCode {mode_title} Submission Failed*\n`{str(e)}`")
+    sys.exit(1)
 
 # 5. Poll for the submission verdict
 check_url = f"https://leetcode.com/submissions/detail/{submission_id}/check/"
