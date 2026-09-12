@@ -36,21 +36,21 @@ def send_telegram(message: str):
     except Exception as e:
         print(f"Error sending Telegram notification: {e}")
 
-def query_groq_deepseek(prompt: str) -> str:
+def query_groq_hard_problem(prompt: str) -> str:
     """
-    Query Groq's DeepSeek-R1 distilled model for code generation.
+    Query Groq's OpenAI GPT-OSS-120B model for Hard problem solving.
     
     Args:
-        prompt: The problem prompt to send to DeepSeek
+        prompt: The problem prompt to send to gpt-oss-120b
         
     Returns:
-        Extracted clean code without thinking tags, or empty string on failure
+        Extracted clean code, or empty string on failure
     """
     if not GROQ_API_KEY:
-        print("GROQ_API_KEY not set. Skipping DeepSeek.")
+        print("GROQ_API_KEY not set. Skipping Groq Hard Problem solver.")
         return ""
     
-    print("Attempting DeepSeek-R1 distilled model on Groq...")
+    print("Attempting Groq openai/gpt-oss-120b model for Hard problem...")
     
     groq_url = "https://api.groq.com/openai/v1/chat/completions"
     groq_headers = {
@@ -58,12 +58,16 @@ def query_groq_deepseek(prompt: str) -> str:
         "Content-Type": "application/json"
     }
     groq_payload = {
-        "model": "deepseek-r1-distill-llama-70b",
-        "temperature": 0.6,
+        "model": "openai/gpt-oss-120b",
+        "temperature": 0.2,
         "messages": [
             {
+                "role": "system",
+                "content": "You are an elite competitive programmer. For this Hard problem, explicitly plan your dynamic programming states, time complexity, and tie-breaking logic in Python comments before writing the final runnable code."
+            },
+            {
                 "role": "user",
-                "content": f"You are an elite competitive programmer. Think step-by-step in <think> tags to map out state transitions and constraints before returning clean, runnable Python code.\n\n{prompt}"
+                "content": prompt
             }
         ]
     }
@@ -74,29 +78,27 @@ def query_groq_deepseek(prompt: str) -> str:
             if groq_res.status_code == 200:
                 try:
                     raw_code = groq_res.json()["choices"][0]["message"]["content"]
-                    # Strip <think>...</think> tags before extracting code
-                    raw_code = re.sub(r'<think>.*?</think>', '', raw_code, flags=re.DOTALL)
                     # Try to extract code from markdown blocks
                     match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
                     clean_code = match.group(1).strip() if match else raw_code.strip()
                     if clean_code:
-                        print("✓ DeepSeek-R1 generated valid code.")
+                        print("✓ Groq gpt-oss-120b generated valid code.")
                         return clean_code
                     else:
-                        print("DeepSeek-R1 generated empty code.")
+                        print("Groq gpt-oss-120b generated empty code.")
                         return ""
                 except Exception as e:
-                    print(f"Code extraction error with DeepSeek-R1: {e}")
+                    print(f"Code extraction error with Groq gpt-oss-120b: {e}")
                     return ""
             elif groq_res.status_code in [429, 503]:
                 sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
-                print(f"DeepSeek-R1 API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
+                print(f"Groq gpt-oss-120b API rate limited/overloaded. Retrying in {sleep_time:.2f}s...")
                 time.sleep(sleep_time)
             else:
-                print(f"DeepSeek-R1 HTTP Error {groq_res.status_code}: {groq_res.text}")
+                print(f"Groq gpt-oss-120b HTTP Error {groq_res.status_code}: {groq_res.text}")
                 return ""
         except Exception as e:
-            print(f"Exception while querying DeepSeek-R1: {e}")
+            print(f"Exception while querying Groq gpt-oss-120b: {e}")
             return ""
     
     return ""
@@ -114,16 +116,16 @@ def generate_solution_with_fallback(prompt: str, difficulty: str) -> str:
     """
     clean_code = None
     
-    # Route to DeepSeek-R1 for Hard problems
+    # Route to Groq gpt-oss-120b for Hard problems
     if difficulty == "Hard":
-        print(f"[Hard Problem] Routing to DeepSeek-R1 distilled model...")
-        clean_code = query_groq_deepseek(prompt)
+        print(f"[Hard Problem] Routing to Groq openai/gpt-oss-120b model...")
+        clean_code = query_groq_hard_problem(prompt)
         if clean_code:
             return clean_code
         else:
-            print("DeepSeek-R1 failed. Falling back to Gemini Flash models...")
+            print("Groq gpt-oss-120b failed. Falling back to Gemini Flash models...")
     
-    # Standard Gemini Flash fallback for Easy/Medium or if Hard DeepSeek fails
+    # Standard Gemini Flash fallback for Easy/Medium or if Hard Groq fails
     models = ["gemini-2.5-flash", "gemini-1.5-flash"]
     
     for model in models:
