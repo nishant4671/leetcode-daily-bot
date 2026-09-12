@@ -24,6 +24,9 @@ def verify_environment():
     
     missing = []
     for var_name, description in required_vars.items():
+        # Check both LEETCODE_CSRF_TOKEN and CSRF_TOKEN as alternatives
+        if var_name == "LEETCODE_CSRF_TOKEN" and (os.environ.get("LEETCODE_CSRF_TOKEN") or os.environ.get("CSRF_TOKEN")):
+            continue
         if not os.environ.get(var_name):
             missing.append(f"{var_name} ({description})")
     
@@ -41,25 +44,26 @@ def verify_leetcode_session():
     Verify LeetCode session is active by making a lightweight GraphQL request.
     Raises EnvironmentError if session is invalid or expired.
     """
-    leetcode_session = os.environ.get("LEETCODE_SESSION")
-    csrf_token = os.environ.get("LEETCODE_CSRF_TOKEN")
+    leetcode_session = os.environ.get("LEETCODE_SESSION", "").strip()
+    csrf_token = os.environ.get("LEETCODE_CSRF_TOKEN", "").strip() or os.environ.get("CSRF_TOKEN", "").strip()
     
     headers = {
         "Content-Type": "application/json",
-        "Referer": "https://leetcode.com/",
+        "Referer": "https://leetcode.com",
         "Origin": "https://leetcode.com",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "x-csrftoken": csrf_token,
-        "Cookie": f"LEETCODE_SESSION={leetcode_session}; csrftoken={csrf_token};",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Cookie": f"LEETCODE_SESSION={leetcode_session}; csrftoken={csrf_token};"
     }
     
-    # Lightweight query to check session validity (query user profile)
+    # Validated userStatus query to prevent 400 Bad Request errors
     test_query = {
         "query": """
-        query me {
-            me {
-                username
-            }
+        query userStatus {
+          userStatus {
+            isSignedIn
+            username
+          }
         }
         """
     }
@@ -68,16 +72,18 @@ def verify_leetcode_session():
         response = requests.post("https://leetcode.com/graphql", json=test_query, headers=headers, timeout=10)
         
         if response.status_code == 403:
-            raise EnvironmentError("LeetCode session cookie has expired. Please refresh Secrets.")
+            raise EnvironmentError("LeetCode session cookie has expired (HTTP 403). Please refresh Secrets.")
         
         if response.status_code != 200:
-            raise EnvironmentError(f"LeetCode session validation failed with status {response.status_code}. Please refresh Secrets.")
+            raise EnvironmentError(f"LeetCode session validation failed with HTTP {response.status_code}: {response.text[:100]}")
         
         data = response.json()
-        if data.get("errors") or not data.get("data", {}).get("me"):
-            raise EnvironmentError("LeetCode session is invalid or user not authenticated. Please refresh Secrets.")
+        user_status = data.get("data", {}).get("userStatus", {})
         
-        print("✓ LeetCode session verified successfully.")
+        if not user_status.get("isSignedIn"):
+            raise EnvironmentError("LeetCode session token is invalid or expired. Please refresh Secrets.")
+        
+        print(f"✓ Authentication verified for LeetCode user: {user_status.get('username')}")
         
     except requests.exceptions.RequestException as e:
         raise EnvironmentError(f"Failed to validate LeetCode session: {str(e)}. Please check your network connection.")
@@ -123,8 +129,8 @@ except (ValueError, EnvironmentError) as e:
     print(str(e))
     sys.exit(1)
 
-LEETCODE_SESSION = os.getenv("LEETCODE_SESSION")
-CSRF_TOKEN = os.getenv("LEETCODE_CSRF_TOKEN")
+LEETCODE_SESSION = os.getenv("LEETCODE_SESSION", "").strip()
+CSRF_TOKEN = os.getenv("LEETCODE_CSRF_TOKEN", "").strip() or os.getenv("CSRF_TOKEN", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -140,11 +146,11 @@ def send_telegram(message: str):
 
 headers = {
     "Content-Type": "application/json",
-    "Referer": "https://leetcode.com/",
+    "Referer": "https://leetcode.com",
     "Origin": "https://leetcode.com",
     "x-csrftoken": CSRF_TOKEN,
     "Cookie": f"LEETCODE_SESSION={LEETCODE_SESSION}; csrftoken={CSRF_TOKEN};",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
 graphql_url = "https://leetcode.com/graphql"
@@ -282,8 +288,9 @@ if not clean_code:
         "Authorization": f"Bearer {groq_api_key}",
         "Content-Type": "application/json"
     }
+    # Updated to openai/gpt-oss-120b to avoid deprecation errors
     groq_payload = {
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-120b",
         "temperature": 0.2,
         "messages": [
             {"role": "system", "content": "You are an elite competitive programmer. Return only clean, runnable code."},
