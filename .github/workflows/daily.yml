@@ -5,9 +5,11 @@ on:
     - cron: '15 0 * * *'
   # This line brings back the "Run workflow" button
   workflow_dispatch:
+
 # Add this specific block to grant push access
 permissions:
   contents: write
+
 jobs:
   solve:
     runs-on: ubuntu-latest
@@ -81,6 +83,7 @@ jobs:
           git config --global user.email "nishantkr4671@gmail.com"
           git add striver_progress.txt
           git commit -m "Update Striver progress index" || echo "No index changes to commit"
+          git pull origin main --rebase
           git push  
 
       - name: Commit and Push to LeetHub Repo
@@ -96,4 +99,5 @@ jobs:
           git config user.email "nishantkr4671@gmail.com"
           git add .
           git commit -m "Auto-Solved: Daily, Random, and Striver" || echo "No changes to commit"
+          git pull origin main --rebase
           git push
