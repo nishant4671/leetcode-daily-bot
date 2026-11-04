@@ -102,14 +102,13 @@ jobs:
           git pull origin main --rebase
           git push
 
-
-
       - name: Trigger Twitter Automation
-      env:
-        GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-      run: |
-        gh api \
-          --method POST \
-          -H "Accept: application/vnd.github+json" \
-          /repos/nishant4671/twitter-automation/dispatches \
-          -f "event_type=leetcode-solved"
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/nishant4671/twitter-automation/dispatches \
+            -f "event_type=leetcode-solved"
