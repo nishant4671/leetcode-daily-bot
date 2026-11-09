@@ -55,6 +55,17 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python solve.py --mode random
 
+      - name: Run Auto-Solver (Random Unsolved 2)
+        if: always()
+        env:
+          LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
+          LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python solve.py --mode random 
+
       - name: Run Auto-Solver (HackerRank)
         if: always()
         env:
@@ -65,26 +76,26 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hackerrank.py
 
-      - name: Run Auto-Solver (Striver A2Z)
-        if: always()
-        env:
-          LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
-          LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python striver.py
+      # - name: Run Auto-Solver (Striver A2Z)  this was commented out because striver sheet is completed 
+      #   if: always()
+      #   env:
+      #     LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
+      #     LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
+      #     GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      #     GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      #     TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      #     TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      #   run: python striver.py
 
-      - name: Save Striver Progress to Bot Repo
-        if: always()
-        run: |
-          git config --global user.name "nishant4671"
-          git config --global user.email "nishantkr4671@gmail.com"
-          git add striver_progress.txt
-          git commit -m "Update Striver progress index" || echo "No index changes to commit"
-          git pull origin main --rebase
-          git push  
+      # - name: Save Striver Progress to Bot Repo
+      #   if: always()
+      #   run: |
+      #     git config --global user.name "nishant4671"
+      #     git config --global user.email "nishantkr4671@gmail.com"
+      #     git add striver_progress.txt
+      #     git commit -m "Update Striver progress index" || echo "No index changes to commit"
+      #     git pull origin main --rebase
+      #     git push  
 
       - name: Commit and Push to LeetHub Repo
         if: always()
