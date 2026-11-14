@@ -507,20 +507,20 @@ Problem Statement:
         sys.exit(1)
 
     # 6. Verdict Polling & Notification
-    print(f"Polling for verdict on #{problem_id} (up to 12 attempts, every 5s)...")
+    print(f"Polling for verdict on #{problem_id} (up to 60 attempts, every 5s)...")
     poll_url = f"https://codeforces.com/api/user.status?handle={CODEFORCES_HANDLE}&from=1&count=1"
 
-    for attempt in range(1, 13):
+    for attempt in range(60): # 5 minutes of polling tolerance
         time.sleep(5)
         try:
             poll_res = requests.get(poll_url, timeout=15)
             if poll_res.status_code != 200:
-                print(f"Polling attempt {attempt}: HTTP {poll_res.status_code}. Retrying...")
+                print(f"Polling attempt {attempt + 1}: HTTP {poll_res.status_code}. Retrying...")
                 continue
 
             poll_data = poll_res.json()
             if poll_data.get("status") != "OK" or not poll_data.get("result"):
-                print(f"Polling attempt {attempt}: invalid API response. Retrying...")
+                print(f"Polling attempt {attempt + 1}: invalid API response. Retrying...")
                 continue
 
             latest_sub = poll_data["result"][0]
@@ -532,11 +532,11 @@ Problem Statement:
 
             # Ensure we are inspecting the submission for this exact problem
             if sub_cid != contest_id or sub_idx != problem_index:
-                print(f"Polling attempt {attempt}: latest submission (#{latest_sub.get('id')}) is for {sub_cid}{sub_idx}, waiting for {problem_id}...")
+                print(f"Polling attempt {attempt + 1}: latest submission (#{latest_sub.get('id')}) is for {sub_cid}{sub_idx}, waiting for {problem_id}...")
                 continue
 
             if verdict is None or verdict == "TESTING":
-                print(f"Polling attempt {attempt}/12... State: TESTING")
+                print(f"Polling attempt {attempt + 1}/60... State: TESTING")
                 continue
 
             print(f"Verdict: {verdict}")
@@ -579,8 +579,8 @@ Problem Statement:
                 sys.exit(1)
 
         except Exception as e:
-            print(f"Error checking status on attempt {attempt}: {e}")
+            print(f"Error checking status on attempt {attempt + 1}: {e}")
     else:
         print("Submission timed out.")
-        send_telegram("❌ *Codeforces Bot Timed Out*\nSubmission took over 60 seconds.")
+        send_telegram("❌ *Codeforces Bot Timed Out*\nSubmission took over 5 minutes.")
         sys.exit(1)
