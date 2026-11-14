@@ -179,6 +179,11 @@ def query_groq_hard_problem(prompt: str) -> str:
                     raw_code = groq_res.json()["choices"][0]["message"]["content"]
                     match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
                     clean_code = match.group(1).strip() if match else raw_code.strip()
+                    if clean_code.startswith("```"):
+                        clean_code = re.sub(r"^```[a-zA-Z0-9]*\n?", "", clean_code)
+                    if clean_code.endswith("```"):
+                        clean_code = re.sub(r"\n?```$", "", clean_code)
+                    clean_code = clean_code.strip()
 
                     # Validate syntax before returning
                     if clean_code and validate_code_syntax(clean_code):
@@ -186,10 +191,10 @@ def query_groq_hard_problem(prompt: str) -> str:
                         return clean_code
                     elif clean_code:
                         print("Code generated but contains syntax errors. Retrying...")
-                        return ""
+                        continue
                     else:
                         print("Groq gpt-oss-120b generated empty code.")
-                        return ""
+                        continue
                 except Exception as e:
                     print(f"Code extraction error with Groq gpt-oss-120b: {e}")
                     return ""
@@ -234,6 +239,11 @@ def generate_solution_with_fallback(prompt: str) -> str:
                         raw_code = ai_json["candidates"][0]["content"]["parts"][0]["text"]
                         match = re.search(r"```(?:python|python3)?\n(.*?)```", raw_code, re.DOTALL | re.IGNORECASE)
                         clean_code = match.group(1).strip() if match else raw_code.strip()
+                        if clean_code.startswith("```"):
+                            clean_code = re.sub(r"^```[a-zA-Z0-9]*\n?", "", clean_code)
+                        if clean_code.endswith("```"):
+                            clean_code = re.sub(r"\n?```$", "", clean_code)
+                        clean_code = clean_code.strip()
 
                         # Validate syntax before returning
                         if clean_code and validate_code_syntax(clean_code):
@@ -241,7 +251,7 @@ def generate_solution_with_fallback(prompt: str) -> str:
                         elif clean_code:
                             print(f"Code generated but contains syntax errors. Retrying with {model}...")
                             clean_code = None
-                            break
+                            continue
                         else:
                             break
                     except Exception as e:
@@ -513,28 +523,40 @@ Problem Statement:
     for attempt in range(60): # 5 minutes of polling tolerance
         time.sleep(5)
         try:
-            poll_res = requests.get(poll_url, timeout=15)
-            if poll_res.status_code != 200:
-                print(f"Polling attempt {attempt + 1}: HTTP {poll_res.status_code}. Retrying...")
+            status_res = requests.get(poll_url, timeout=15)
+            if status_res.status_code != 200:
+                print(f"Polling attempt {attempt + 1}: HTTP {status_res.status_code}. Retrying...")
                 continue
 
-            poll_data = poll_res.json()
-            if poll_data.get("status") != "OK" or not poll_data.get("result"):
-                print(f"Polling attempt {attempt + 1}: invalid API response. Retrying...")
+            try:
+                data = status_res.json()
+            except Exception:
+                print("Cloudflare challenge received. Retrying...")
                 continue
 
-            latest_sub = poll_data["result"][0]
+            if data.get("status") != "OK":
+                print(f"Codeforces API comment: {data.get('comment')}")
+                continue
+
+            submissions = data.get("result", [])
+            if not submissions:
+                print(f"Polling attempt {attempt + 1}: empty submissions list. Retrying...")
+                continue
+
+            latest_sub = submissions[0]
+
+            # CACHE BYPASS: verify that str(latest_sub['problem']['contestId']) + latest_sub['problem']['index'] matches the target problem
+            try:
+                sub_problem_id = str(latest_sub['problem']['contestId']) + str(latest_sub['problem']['index'])
+            except (KeyError, TypeError):
+                print("API cache lag. Retrying...")
+                continue
+
+            if sub_problem_id.upper() != problem_id.upper():
+                print("API cache lag. Retrying...")
+                continue
+
             verdict = latest_sub.get("verdict")
-
-            sub_prob = latest_sub.get("problem", {})
-            sub_cid = sub_prob.get("contestId")
-            sub_idx = str(sub_prob.get("index", "")).strip().upper()
-
-            # Ensure we are inspecting the submission for this exact problem
-            if sub_cid != contest_id or sub_idx != problem_index:
-                print(f"Polling attempt {attempt + 1}: latest submission (#{latest_sub.get('id')}) is for {sub_cid}{sub_idx}, waiting for {problem_id}...")
-                continue
-
             if verdict is None or verdict == "TESTING":
                 print(f"Polling attempt {attempt + 1}/60... State: TESTING")
                 continue
