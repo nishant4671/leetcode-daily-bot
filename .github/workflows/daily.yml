@@ -76,7 +76,29 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hackerrank.py
 
-      - name: Run Auto-Solver (Codeforces)
+      - name: Run Auto-Solver (Codeforces 1)
+        if: always()
+        env:
+          CODEFORCES_HANDLE: ${{ secrets.CODEFORCES_HANDLE }}
+          CODEFORCES_SESSION_COOKIE: ${{ secrets.CODEFORCES_SESSION_COOKIE }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python codeforces.py
+
+      - name: Run Auto-Solver (Codeforces 2)
+        if: always()
+        env:
+          CODEFORCES_HANDLE: ${{ secrets.CODEFORCES_HANDLE }}
+          CODEFORCES_SESSION_COOKIE: ${{ secrets.CODEFORCES_SESSION_COOKIE }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python codeforces.py
+
+      - name: Run Auto-Solver (Codeforces 3)
         if: always()
         env:
           CODEFORCES_HANDLE: ${{ secrets.CODEFORCES_HANDLE }}
