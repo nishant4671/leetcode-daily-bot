@@ -31,7 +31,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: pip install requests curl_cffi==0.16.2
+        run: pip install requests curl_cffi==0.16.2 beautifulsoup4
 
       - name: Run Auto-Solver (Daily Challenge)
         env:
@@ -76,6 +76,17 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hackerrank.py
 
+      - name: Run Auto-Solver (Codeforces)
+        if: always()
+        env:
+          CODEFORCES_HANDLE: ${{ secrets.CODEFORCES_HANDLE }}
+          CODEFORCES_SESSION_COOKIE: ${{ secrets.CODEFORCES_SESSION_COOKIE }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python codeforces.py
+
       # - name: Run Auto-Solver (Striver A2Z)  this was commented out because striver sheet is completed 
       #   if: always()
       #   env:
@@ -100,16 +111,17 @@ jobs:
       - name: Commit and Push to LeetHub Repo
         if: always()
         run: |
-          # Move all three folder naming conventions into the target repository
+          # Move folder naming conventions into the target repository
           mv [0-9][0-9][0-9][0-9]-* target-repo/ 2>/dev/null || true
           mv HackerRank-* target-repo/ 2>/dev/null || true
           mv Striver-* target-repo/ 2>/dev/null || true
+          mv Codeforces-* target-repo/ 2>/dev/null || true
           
           cd target-repo
           git config user.name "nishant4671"
           git config user.email "nishantkr4671@gmail.com"
           git add .
-          git commit -m "Auto-Solved: Daily, Random, and Striver" || echo "No changes to commit"
+          git commit -m "Auto-Solved: Daily, Random, and Codeforces" || echo "No changes to commit"
           git pull origin main --rebase
           git push
 
